@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package keyvalue;
+
+service KeyValueService{
+    rpc Get (GetRequest) returns (GetResponse );
+    rpc Put (PutRequest) returns (PutResponse);
+    rpc Delete (DeleteRequest) returns (DeleteResponse);
+    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+    rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
+}
+
+message GetRequest{
+    string key = 1;
+}
+
+message GetResponse{
+    string value = 1;
+    bool found = 2;
+}
+
+message PutRequest {
+  string key = 1;
+  string value = 2;
+}
+
+message PutResponse {
+  bool success = 1;
+}
+
+message DeleteRequest {
+  string key = 1;
+}
+
+message DeleteResponse {
+  bool success = 1;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  bool healthy = 1;
+  int64 timestamp = 2;
+}
+
+message ReplicateRequest {
+  string operation = 1; // "PUT" or "DELETE"
+  string key = 2;
+  string value = 3;
+  int64 timestamp = 4;   // Added timestamp field
+}
+
+message ReplicateResponse {
+  bool success = 1;
+}

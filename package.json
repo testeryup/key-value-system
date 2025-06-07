@@ -1,0 +1,24 @@
+{
+  "name": "key-value-system",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start:kv1": "node single-node.js 50051 kv1",
+    "start:kv2": "node single-node.js 50052 kv2",
+    "start:kv3": "node single-node.js 50053 kv3",
+    "start:lb-primary": "node load-balancer.js 60051 primary 60061",
+    "start:lb-secondary": "node load-balancer.js 60051 secondary 60062",
+    "client:demo": "node client.js demo",
+    "client:test": "node client.js test",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.13.4",
+    "@grpc/proto-loader": "^0.7.15",
+    "fs-extra": "^11.3.0"
+  }
+}

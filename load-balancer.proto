@@ -1,0 +1,54 @@
+syntax = "proto3";
+package loadbalancer;
+
+service LoadBalancerService{
+    rpc Get(GetRequest) returns (GetResponse);
+    rpc Put(PutRequest) returns (PutResponse);
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+    rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+}
+
+message GetRequest{
+    string key = 1;
+}
+
+message GetResponse{
+    string value = 1;
+    bool found = 2;
+}
+
+message PutRequest{
+    string key = 1;
+    string value = 2;
+}
+
+message PutResponse{
+    bool success = 1;
+}
+
+message DeleteRequest{
+    string key = 1;
+}
+
+message DeleteResponse{
+    bool success = 1;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+    bool healthy = 1;
+    int64 timestamp = 2;
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+    bool isActive = 1;
+    string mode = 2;
+    int32 port = 3;
+    int32 healthyNodes = 4;
+    int32 totalNodes = 5;
+    bool otherLbHealthy = 6;
+}
