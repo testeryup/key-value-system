@@ -8,6 +8,7 @@ service KeyValueService{
     rpc Delete (DeleteRequest) returns (DeleteResponse);
     rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
     rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
+    rpc RequestSync(SyncRequest) returns (SyncResponse);  // New sync endpoint
 }
 
 message GetRequest{
@@ -41,15 +42,29 @@ message HealthCheckRequest {}
 message HealthCheckResponse {
   bool healthy = 1;
   int64 timestamp = 2;
+  bool isInitializing = 3;  // New field
 }
 
 message ReplicateRequest {
   string operation = 1; // "PUT" or "DELETE"
   string key = 2;
   string value = 3;
-  int64 timestamp = 4;   // Added timestamp field
+  int64 timestamp = 4;
 }
 
 message ReplicateResponse {
   bool success = 1;
+}
+
+// New sync messages
+message SyncRequest {
+  string nodeId = 1;
+  int64 lastSyncTime = 2;
+}
+
+message SyncResponse {
+  bool success = 1;
+  string data = 2;        // JSON string of data
+  int32 itemCount = 3;
+  int64 timestamp = 4;
 }

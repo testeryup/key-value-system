@@ -1,1 +1,14 @@
-{}
+{
+  "data": {
+    "yolo": {
+      "value": "321",
+      "timestamp": 1749401499246
+    },
+    "chichi": {
+      "value": "123",
+      "timestamp": 1749401506790
+    }
+  },
+  "lastSyncTime": 1749401659278,
+  "savedAt": 1749401659278
+}
