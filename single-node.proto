@@ -8,7 +8,8 @@ service KeyValueService{
     rpc Delete (DeleteRequest) returns (DeleteResponse);
     rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
     rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
-    rpc RequestSync(SyncRequest) returns (SyncResponse);  // New sync endpoint
+    rpc GetNodeInfo(GetNodeInfoRequest) returns (GetNodeInfoResponse);  // NEW
+    rpc CopyAllData(CopyAllDataRequest) returns (CopyAllDataResponse);  // NEW
 }
 
 message GetRequest{
@@ -42,7 +43,7 @@ message HealthCheckRequest {}
 message HealthCheckResponse {
   bool healthy = 1;
   int64 timestamp = 2;
-  bool isInitializing = 3;  // New field
+  bool isInitializing = 3;
 }
 
 message ReplicateRequest {
@@ -56,15 +57,28 @@ message ReplicateResponse {
   bool success = 1;
 }
 
-// New sync messages
-message SyncRequest {
+// NEW: Get node metadata
+message GetNodeInfoRequest {
   string nodeId = 1;
-  int64 lastSyncTime = 2;
 }
 
-message SyncResponse {
+message GetNodeInfoResponse {
   bool success = 1;
-  string data = 2;        // JSON string of data
+  int64 savedAt = 2;
   int32 itemCount = 3;
-  int64 timestamp = 4;
+  string nodeId = 4;
+  int64 timestamp = 5;
+}
+
+// NEW: Copy all data
+message CopyAllDataRequest {
+  string nodeId = 1;
+}
+
+message CopyAllDataResponse {
+  bool success = 1;
+  string data = 2;
+  int32 itemCount = 3;
+  int64 savedAt = 4;
+  int64 timestamp = 5;
 }

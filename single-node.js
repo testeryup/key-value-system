@@ -10,17 +10,14 @@ class KVNode {
         this.dbPath = path.join(__dirname, `${nodeId}-db.json`);
         this.data = {};
         this.lastHeartBeat = Date.now();
-        this.lastSyncTime = 0; // Thời điểm sync cuối cùng
-        this.isInitializing = true; // Flag để biết node đang khởi tạo
+        this.lastSyncTime = 0; // Có thể bỏ vì dùng savedAt
+        this.savedAt = 0; // Timestamp when data was last saved
+        this.isInitializing = true;
         this.otherNodes = [
             { host: 'localhost', port: 50051, id: 'kv1' },
             { host: 'localhost', port: 50052, id: 'kv2' },
             { host: 'localhost', port: 50053, id: 'kv3' }
         ].filter(node => node.port !== this.port);
-
-        // Sync configuration
-        this.syncRetryAttempts = 3;
-        this.syncRetryDelay = 2000; // 2 seconds
     }
 
     async loadData() {
@@ -28,27 +25,34 @@ class KVNode {
             if (await fs.pathExists(this.dbPath)) {
                 const rawData = await fs.readFile(this.dbPath, 'utf8');
                 const parsedData = JSON.parse(rawData);
-                this.data = parsedData.data || parsedData; // Backward compatibility
-                this.lastSyncTime = parsedData.lastSyncTime || 0;
+
+                this.data = parsedData.data || parsedData;
+                this.savedAt = parsedData.savedAt || 0;
+                // Backward compatibility
+                this.lastSyncTime = parsedData.lastSyncTime || this.savedAt;
+
                 console.log(`[${this.nodeId}] Loaded ${Object.keys(this.data).length} keys from disk`);
-                console.log(`[${this.nodeId}] Last sync time: ${new Date(this.lastSyncTime).toISOString()}`);
+                console.log(`[${this.nodeId}] Last saved at: ${new Date(this.savedAt).toISOString()}`);
             } else {
                 console.log(`[${this.nodeId}] No existing data file, starting fresh`);
-                this.lastSyncTime = Date.now();
+                this.savedAt = Date.now();
+                this.lastSyncTime = this.savedAt;
             }
         } catch (err) {
             console.error(`[${this.nodeId}] Error loading data:`, err.message);
             this.data = {};
-            this.lastSyncTime = Date.now();
+            this.savedAt = Date.now();
+            this.lastSyncTime = this.savedAt;
         }
     }
 
     async saveData() {
         try {
+            this.savedAt = Date.now();
             const dataToSave = {
                 data: this.data,
-                lastSyncTime: this.lastSyncTime,
-                savedAt: Date.now()
+                savedAt: this.savedAt
+                // Bỏ lastSyncTime vì trùng với savedAt
             };
             await fs.writeFile(this.dbPath, JSON.stringify(dataToSave, null, 2));
         } catch (err) {
@@ -56,47 +60,62 @@ class KVNode {
         }
     }
 
-    // Đồng bộ dữ liệu khi node khởi động
+    // Đồng bộ dữ liệu khi node khởi động - SIMPLIFIED VERSION
     async performInitialSync() {
         console.log(`[${this.nodeId}] 🔄 Starting initial sync...`);
+        console.log(`[${this.nodeId}] Current savedAt: ${new Date(this.savedAt).toISOString()}`);
 
         let syncSuccessful = false;
-        let syncedFromNode = null;
+        let newestNode = null;
+        let newestTimestamp = this.savedAt;
 
-        // Thử sync từ từng node khác
+        // Tìm node có savedAt mới nhất
         for (const targetNode of this.otherNodes) {
             try {
-                console.log(`[${this.nodeId}] Attempting sync from ${targetNode.id}...`);
+                console.log(`[${this.nodeId}] Checking ${targetNode.id}...`);
 
-                const syncResult = await this.syncFromNode(targetNode);
-                if (syncResult.success) {
-                    syncSuccessful = true;
-                    syncedFromNode = targetNode.id;
-                    console.log(`[${this.nodeId}] ✅ Successfully synced from ${targetNode.id}`);
-                    console.log(`[${this.nodeId}] Received ${syncResult.itemCount} items`);
-                    break;
+                const nodeInfo = await this.getNodeInfo(targetNode);
+                if (nodeInfo.success && nodeInfo.savedAt > newestTimestamp) {
+                    newestTimestamp = nodeInfo.savedAt;
+                    newestNode = targetNode;
+                    console.log(`[${this.nodeId}] Found newer data on ${targetNode.id}: ${new Date(nodeInfo.savedAt).toISOString()}`);
                 }
             } catch (error) {
-                console.log(`[${this.nodeId}] ❌ Failed to sync from ${targetNode.id}: ${error.message}`);
+                console.log(`[${this.nodeId}] ❌ Cannot check ${targetNode.id}: ${error.message}`);
                 continue;
             }
         }
 
+        if (newestNode && newestTimestamp > this.savedAt) {
+            // Copy toàn bộ data từ node mới nhất
+            try {
+                console.log(`[${this.nodeId}] 📥 Copying all data from ${newestNode.id}...`);
+                const syncResult = await this.copyAllDataFromNode(newestNode);
+
+                if (syncResult.success) {
+                    this.data = syncResult.data;
+                    await this.saveData();
+                    syncSuccessful = true;
+                    console.log(`[${this.nodeId}] ✅ Successfully copied ${Object.keys(this.data).length} keys from ${newestNode.id}`);
+                }
+            } catch (error) {
+                console.log(`[${this.nodeId}] ❌ Failed to copy from ${newestNode.id}: ${error.message}`);
+            }
+        } else {
+            console.log(`[${this.nodeId}] ℹ️  Local data is up-to-date, no sync needed`);
+            syncSuccessful = true;
+        }
+
         if (!syncSuccessful) {
             console.log(`[${this.nodeId}] ⚠️  Could not sync from any node, starting with local data`);
-        } else {
-            // Update sync time và save
-            this.lastSyncTime = Date.now();
-            await this.saveData();
-            console.log(`[${this.nodeId}] 💾 Sync completed and saved to disk`);
         }
 
         this.isInitializing = false;
         console.log(`[${this.nodeId}] 🚀 Node ready to serve requests`);
     }
 
-    // Sync dữ liệu từ một node cụ thể
-    async syncFromNode(targetNode) {
+    // Lấy thông tin metadata của một node (savedAt, itemCount)
+    async getNodeInfo(targetNode) {
         const packageDefinition = protoLoader.loadSync(
             path.join(__dirname, 'single-node.proto'),
             { keepCase: true, longs: String, enums: String, defaults: true, oneofs: true }
@@ -110,13 +129,39 @@ class KVNode {
 
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
-                reject(new Error('Sync timeout'));
-            }, 10000); // 10 second timeout
+                reject(new Error('Timeout'));
+            }, 5000);
 
-            client.RequestSync({
-                nodeId: this.nodeId,
-                lastSyncTime: this.lastSyncTime
-            }, (err, response) => {
+            client.GetNodeInfo({ nodeId: this.nodeId }, (err, response) => {
+                clearTimeout(timeout);
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(response);
+                }
+            });
+        });
+    }
+
+    // Copy toàn bộ data từ một node khác
+    async copyAllDataFromNode(targetNode) {
+        const packageDefinition = protoLoader.loadSync(
+            path.join(__dirname, 'single-node.proto'),
+            { keepCase: true, longs: String, enums: String, defaults: true, oneofs: true }
+        );
+        const kvProto = grpc.loadPackageDefinition(packageDefinition).keyvalue;
+
+        const client = new kvProto.KeyValueService(
+            `${targetNode.host}:${targetNode.port}`,
+            grpc.credentials.createInsecure()
+        );
+
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('Copy timeout'));
+            }, 15000); // Longer timeout cho copy all data
+
+            client.CopyAllData({ nodeId: this.nodeId }, (err, response) => {
                 clearTimeout(timeout);
 
                 if (err) {
@@ -126,57 +171,20 @@ class KVNode {
 
                 if (response.success && response.data) {
                     try {
-                        // Parse và merge dữ liệu
-                        const receivedData = JSON.parse(response.data);
-                        const mergedData = this.mergeData(this.data, receivedData);
-
-                        this.data = mergedData;
-
+                        const data = JSON.parse(response.data);
                         resolve({
                             success: true,
-                            itemCount: Object.keys(receivedData).length,
-                            mergedCount: Object.keys(this.data).length
+                            data: data,
+                            itemCount: Object.keys(data).length
                         });
                     } catch (parseError) {
-                        reject(new Error(`Failed to parse sync data: ${parseError.message}`));
+                        reject(new Error(`Failed to parse data: ${parseError.message}`));
                     }
                 } else {
-                    resolve({ success: true, itemCount: 0 }); // No data to sync
+                    reject(new Error('No data received'));
                 }
             });
         });
-    }
-
-    // Merge dữ liệu với conflict resolution (newer timestamp wins)
-    mergeData(localData, remoteData) {
-        const merged = { ...localData };
-
-        for (const [key, remoteRecord] of Object.entries(remoteData)) {
-            const localRecord = merged[key];
-
-            if (!localRecord) {
-                // Key không tồn tại locally, add từ remote
-                merged[key] = remoteRecord;
-                console.log(`[${this.nodeId}] 📥 Added new key: ${key}`);
-            } else {
-                // Conflict resolution: newer timestamp wins
-                const localTimestamp = localRecord.timestamp || 0;
-                const remoteTimestamp = remoteRecord.timestamp || 0;
-
-                if (remoteTimestamp > localTimestamp) {
-                    merged[key] = remoteRecord;
-                    console.log(`[${this.nodeId}] 🔄 Updated key: ${key} (remote newer)`);
-                } else if (localTimestamp > remoteTimestamp) {
-                    // Keep local version
-                    console.log(`[${this.nodeId}] 📌 Kept local key: ${key} (local newer)`);
-                } else {
-                    // Same timestamp, keep local (tie-breaker)
-                    console.log(`[${this.nodeId}] ⚖️  Tie-breaker key: ${key} (kept local)`);
-                }
-            }
-        }
-
-        return merged;
     }
 
     setupGrpcServer() {
@@ -200,7 +208,9 @@ class KVNode {
             Delete: this.handleDelete.bind(this),
             HealthCheck: this.handleHealthCheck.bind(this),
             Replicate: this.handleReplicate.bind(this),
-            RequestSync: this.handleRequestSync.bind(this) // New sync endpoint
+            GetNodeInfo: this.handleGetNodeInfo.bind(this), // NEW: Return node metadata
+            CopyAllData: this.handleCopyAllData.bind(this), // NEW: Return all data
+            // Remove RequestSync - không cần nữa
         });
 
         this.server.bindAsync(
@@ -213,86 +223,65 @@ class KVNode {
                 }
                 console.log(`[${this.nodeId}] KV Node started on port ${port}`);
 
-                // Perform initial sync after server is ready
                 setTimeout(() => {
                     this.performInitialSync();
-                }, 1000); // Wait 1 second for server to be fully ready
+                }, 1000);
             }
         );
     }
 
-    // Handle sync requests từ nodes khác
-    handleRequestSync(call, callback) {
+    // NEW: Handle GetNodeInfo requests
+    handleGetNodeInfo(call, callback) {
         try {
-            const { nodeId, lastSyncTime } = call.request;
-            console.log(`[${this.nodeId}] 📞 Sync request from ${nodeId}, lastSyncTime: ${new Date(parseInt(lastSyncTime)).toISOString()}`);
-
-            // Filter data newer than requester's last sync time
-            const filteredData = {};
-            let itemCount = 0;
-
-            for (const [key, record] of Object.entries(this.data)) {
-                const recordTimestamp = record.timestamp || 0;
-                if (recordTimestamp > parseInt(lastSyncTime)) {
-                    filteredData[key] = record;
-                    itemCount++;
-                }
-            }
-
-            console.log(`[${this.nodeId}] 📤 Sending ${itemCount} items to ${nodeId}`);
+            const { nodeId } = call.request;
+            console.log(`[${this.nodeId}] 📊 Node info request from ${nodeId}`);
 
             callback(null, {
                 success: true,
-                data: JSON.stringify(filteredData),
-                itemCount: itemCount,
+                savedAt: this.savedAt,
+                itemCount: Object.keys(this.data).length,
+                nodeId: this.nodeId,
                 timestamp: Date.now()
             });
-
         } catch (error) {
-            console.error(`[${this.nodeId}] Sync request error:`, error.message);
+            console.error(`[${this.nodeId}] GetNodeInfo error:`, error.message);
             callback(null, {
                 success: false,
-                data: '',
+                savedAt: 0,
                 itemCount: 0,
+                nodeId: this.nodeId,
                 timestamp: Date.now()
             });
         }
     }
 
-    handleGet(call, callback) {
+    // NEW: Handle CopyAllData requests
+    handleCopyAllData(call, callback) {
         try {
-            // Reject requests during initialization
-            if (this.isInitializing) {
-                return callback({
-                    code: grpc.status.UNAVAILABLE,
-                    message: 'Node is initializing, please try again later'
-                });
-            }
+            const { nodeId } = call.request;
+            console.log(`[${this.nodeId}] 📤 Copy all data request from ${nodeId}`);
+            console.log(`[${this.nodeId}] Sending ${Object.keys(this.data).length} items`);
 
-            const { key } = call.request;
-            const record = this.data[key];
-
-            if (record) {
-                console.log(`[${this.nodeId}] GET ${key} -> ${record.value} (${new Date(record.timestamp).toISOString()})`);
-                callback(null, {
-                    value: record.value,
-                    found: true
-                });
-            } else {
-                console.log(`[${this.nodeId}] GET ${key} -> NOT_FOUND`);
-                callback(null, {
-                    value: '',
-                    found: false
-                });
-            }
+            callback(null, {
+                success: true,
+                data: JSON.stringify(this.data),
+                itemCount: Object.keys(this.data).length,
+                savedAt: this.savedAt,
+                timestamp: Date.now()
+            });
         } catch (error) {
-            console.error(`[${this.nodeId}] GET error:`, error.message);
-            callback(null, { value: '', found: false });
+            console.error(`[${this.nodeId}] CopyAllData error:`, error.message);
+            callback(null, {
+                success: false,
+                data: '{}',
+                itemCount: 0,
+                savedAt: 0,
+                timestamp: Date.now()
+            });
         }
     }
 
     async handlePut(call, callback) {
-        // Reject requests during initialization
         if (this.isInitializing) {
             return callback({
                 code: grpc.status.UNAVAILABLE,
@@ -308,11 +297,8 @@ class KVNode {
                 timestamp: timestamp
             };
 
-            // Update last sync time
-            this.lastSyncTime = timestamp;
-
-            await this.saveData();
-            console.log(`[${this.nodeId}] PUT ${key} = ${value} (${new Date(timestamp).toISOString()})`);
+            await this.saveData(); // savedAt sẽ được update trong saveData()
+            console.log(`[${this.nodeId}] PUT ${key} = ${value}`);
             await this.replicateToOthers('PUT', key, value, timestamp);
             callback(null, { success: true });
         } catch (error) {
@@ -322,7 +308,6 @@ class KVNode {
     }
 
     async handleDelete(call, callback) {
-        // Reject requests during initialization
         if (this.isInitializing) {
             return callback({
                 code: grpc.status.UNAVAILABLE,
@@ -335,11 +320,8 @@ class KVNode {
             const existed = this.data[key] !== undefined;
             delete this.data[key];
 
-            // Update last sync time
-            this.lastSyncTime = Date.now();
-
-            await this.saveData();
-            console.log(`[${this.nodeId}] DELETE ${key} -> ${existed ? 'SUCCESS' : 'NOT_FOUND'}`);
+            await this.saveData(); // savedAt sẽ được update trong saveData()
+            console.log(`[${this.nodeId}] DELETE ${key} -> ${existed ? 'SUCCESS' : 'Không tìm thấy'}`);
             await this.replicateToOthers('DELETE', key);
             callback(null, { success: true });
         } catch (error) {
@@ -348,12 +330,44 @@ class KVNode {
         }
     }
 
+    // Các methods khác giữ nguyên...
+    handleGet(call, callback) {
+        try {
+            if (this.isInitializing) {
+                return callback({
+                    code: grpc.status.UNAVAILABLE,
+                    message: 'Node is initializing, please try again later'
+                });
+            }
+
+            const { key } = call.request;
+            const record = this.data[key];
+
+            if (record) {
+                console.log(`[${this.nodeId}] GET ${key} -> ${record.value}`);
+                callback(null, {
+                    value: record.value,
+                    found: true
+                });
+            } else {
+                console.log(`[${this.nodeId}] GET ${key} -> Không tìm thấy`);
+                callback(null, {
+                    value: '',
+                    found: false
+                });
+            }
+        } catch (error) {
+            console.error(`[${this.nodeId}] GET error:`, error.message);
+            callback(null, { value: '', found: false });
+        }
+    }
+
     handleHealthCheck(call, callback) {
         this.lastHeartBeat = Date.now();
         callback(null, {
             healthy: true,
             timestamp: this.lastHeartBeat,
-            isInitializing: this.isInitializing // Thêm thông tin về trạng thái khởi tạo
+            isInitializing: this.isInitializing
         });
     }
 
@@ -367,7 +381,6 @@ class KVNode {
             const incomingTimestamp = parseInt(timestamp) || Date.now();
 
             if (operation === 'PUT') {
-                // Conflict resolution: chỉ apply nếu timestamp mới hơn
                 const existingRecord = this.data[key];
                 if (!existingRecord || incomingTimestamp >= existingRecord.timestamp) {
                     this.data[key] = {
@@ -375,24 +388,13 @@ class KVNode {
                         timestamp: incomingTimestamp
                     };
                     console.log(`[${this.nodeId}] REPLICATED PUT ${key} = ${value}`);
-
-                    // Update last sync time if this is newer
-                    if (incomingTimestamp > this.lastSyncTime) {
-                        this.lastSyncTime = incomingTimestamp;
-                    }
                 } else {
                     console.log(`[${this.nodeId}] IGNORED PUT ${key} (older timestamp)`);
                 }
             }
             else if (operation === "DELETE") {
-                // For DELETE, we just remove the key
                 delete this.data[key];
                 console.log(`[${this.nodeId}] REPLICATED DELETE ${key}`);
-
-                // Update last sync time
-                if (incomingTimestamp > this.lastSyncTime) {
-                    this.lastSyncTime = incomingTimestamp;
-                }
             }
 
             await this.saveData();

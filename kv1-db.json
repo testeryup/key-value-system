@@ -2,17 +2,20 @@
   "data": {
     "yolo": {
       "value": "321",
-      "timestamp": 1749401499246
+      "timestamp": 1749449729077
     },
-    "chichi": {
-      "value": "123",
-      "timestamp": 1749401506790
+    "uchi": {
+      "value": "haha",
+      "timestamp": 1749449733349
     },
-    "test": {
+    "hee": {
       "value": "123",
-      "timestamp": 1749401574852
+      "timestamp": 1749449749883
+    },
+    "jiji": {
+      "value": "321",
+      "timestamp": 1749449754588
     }
   },
-  "lastSyncTime": 1749401670094,
-  "savedAt": 1749401670094
+  "savedAt": 1749449779742
 }

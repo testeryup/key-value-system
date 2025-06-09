@@ -284,7 +284,7 @@ npm run start:kv2
 
 # 6. Kiểm tra kv2 đã có đầy đủ data
 node client.js get key3  # Should return "value3"
-node client.js get key1  # Should return NOT_FOUND
+node client.js get key1  # Should return Không tìm thấy
 ```
 
 ### Test Load Balancer Failover

@@ -85,7 +85,7 @@ class KVClient {
                                 console.log('Usage: get <key>');
                             } else {
                                 const result = await this.get(parts[1]);
-                                console.log(result.found ? `"${result.value}"` : 'NOT_FOUND');
+                                console.log(result.found ? `"${result.value}"` : 'Không tìm thấy');
                             }
                             break;
 
@@ -154,7 +154,7 @@ if (require.main === module) {
                 switch (command) {
                     case 'get':
                         const result = await client.get(key);
-                        console.log(result.found ? result.value : 'NOT_FOUND');
+                        console.log(result.found ? result.value : 'Không tìm thấy');
                         break;
                     case 'put':
                         await client.put(key, value);
