@@ -8,8 +8,8 @@ service KeyValueService{
     rpc Delete (DeleteRequest) returns (DeleteResponse);
     rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
     rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
-    rpc GetNodeInfo(GetNodeInfoRequest) returns (GetNodeInfoResponse);  // NEW
-    rpc CopyAllData(CopyAllDataRequest) returns (CopyAllDataResponse);  // NEW
+    rpc GetNodeInfo(GetNodeInfoRequest) returns (GetNodeInfoResponse);  
+    rpc CopyAllData(CopyAllDataRequest) returns (CopyAllDataResponse);  
 }
 
 message GetRequest{

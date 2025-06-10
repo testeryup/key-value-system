@@ -1,6 +1,67 @@
+# Nhóm 4 - Ứng dụng Phân tán N03
+## Thành viên
+- Nguyễn Mạnh Đạt
+- Đỗ Huy Dương
+
 # Hệ Thống Key-Value Phân Tán
 
 Một hệ thống key-value store phân tán được xây dựng bằng Node.js và gRPC, hỗ trợ load balancing, replication và failover tự động.
+
+## 🎯 Đáp Ứng Các Tiêu Chí Hệ Phân Tán
+
+### ✅ **Scalability (Khả năng mở rộng)**
+- **Horizontal scaling**: Có thể thêm nhiều node (hiện tại: 3 node)
+- **Load balancing**: Round-robin phân phối yêu cầu qua Load Balancer
+- **Stateless architecture**: Mỗi node độc lập, không phụ thuộc state của nhau
+
+### ✅ **High Availability (Tính sẵn sàng cao)**  
+- **No single point of failure**: 
+  - 3 KV nodes với replication
+  - 2 Load Balancers với failover tự động
+- **Fault tolerance**: Hệ thống hoạt động khi 1-2 nodes down
+- **Primary/Secondary LB**: Automatic failover khi Primary LB crash
+- **Graceful degradation**: Performance giảm nhưng hệ thống vẫn hoạt động
+
+### ✅ **Consistency (Tính nhất quán)**
+- **Eventual consistency**: Thông qua replication mechanism  
+- **Conflict resolution**: Timestamp-based (newer wins)
+- **Atomic operations**: Mỗi PUT/DELETE được replicate đầy đủ
+- **Node recovery sync**: Copy toàn bộ data từ node mới nhất
+
+### ✅ **Partition Tolerance (Chịu đựng phân vùng mạng)**
+- **Network partition handling**: Nodes hoạt động độc lập khi mất kết nối
+- **Recovery mechanism**: Tự động đồng bộ khi khởi động lại
+- **Timeout & retry**: Health check với timeout, retry mechanism
+
+### ✅ **Reliability (Độ tin cậy)**
+- **Data persistence**: Lưu vào JSON files với timestamp
+- **Replication factor 3**: Mỗi data có 3 copies
+- **Health monitoring**: Kiểm tra tình trạng các node liên tục (5s interval)
+- **Automatic recovery**: Node tự động rejoin cluster sau restart
+
+### ✅ **Performance (Hiệu năng)**
+- **Load balancing**: Yêu cầu được phân phối qua các node
+- **Asynchronous operations**: Non-blocking gRPC calls
+- **Connection pooling**: Tái sử dụng gRPC clients
+- **Efficient data format**: JSON 
+
+## 📊 **CAP Theorem Analysis**
+
+Hệ thống thiên về **AP** (Availability + Partition Tolerance):
+
+```
+CAP Theorem Trade-offs:
+┌─────────────────┐
+│   Consistency   │ ⚖️  Eventually Consistent
+│                 │     (giải pháp dựa trên timestamp)
+├─────────────────┤
+│  Availability   │ ✅  High (nhiều nodes + LB failover)
+│                 │     
+├─────────────────┤  
+│Partition        │ ✅  Tolerant (các node hoạt động độc lập)
+│Tolerance        │     (tự hồi phục khi sống dậy)
+└─────────────────┘
+```
 
 ## 📋 Mục Lục
 
@@ -158,8 +219,8 @@ service KeyValueService {
     rpc Delete(DeleteRequest) returns (DeleteResponse);
     rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
     rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
-    rpc GetNodeInfo(GetNodeInfoRequest) returns (GetNodeInfoResponse);  // NEW
-    rpc CopyAllData(CopyAllDataRequest) returns (CopyAllDataResponse);  // NEW
+    rpc GetNodeInfo(GetNodeInfoRequest) returns (GetNodeInfoResponse);
+    rpc CopyAllData(CopyAllDataRequest) returns (CopyAllDataResponse);
 }
 ```
 
@@ -516,8 +577,6 @@ client.GetNodeInfo({nodeId: 'test'}, (err, res) => console.log(err || res));
 
 ---
 
-**🎉 Hệ thống Key-Value Store với cơ chế sync đơn giản và hiệu quả!**
-
 ### 🚀 Quick Start
 ```bash
 # Terminal 1-3: Start nodes (sẽ tự động sync nếu cần)
@@ -530,7 +589,7 @@ npm run start:lb-primary & npm run start:lb-secondary
 node client.js
 ```
 
-### 💡 Sync Logic Summary
+### 💡 Logic đồng bộ dữ liệu
 - **Đơn giản**: Chỉ so sánh [savedAt](http://_vscodecontentref_/21) timestamp
 - **Hiệu quả**: Copy toàn bộ data thay vì track operations
 - **Đảm bảo consistency**: Node có [savedAt](http://_vscodecontentref_/22) mới nhất = source of truth
